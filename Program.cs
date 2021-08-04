@@ -21,13 +21,35 @@ namespace QueryEventHub
             var cmd = new CommandLineApplication();
             var ehConnString = cmd.Option("-c | --connString <value>", "EventHub Connection String", CommandOptionType.SingleValue);
             var ehName = cmd.Option("-n | --name <value>", "EventHub Name", CommandOptionType.SingleValue);
-            //var timeOut = cmd.Option("-t | --timeout <value>", "Timeout for canceling the process of reading the eventhub", CommandOptionType.SingleValue);
+            var timeOut = cmd.Option("-t | --timeout <value>", "Seconds to wait while reading the EventHub (default & minimum is 5)", CommandOptionType.SingleValue);
 
             cmd.OnExecute(() =>
             {
-                string result = processAllEvents(ehConnString.Value(), ehName.Value()).GetAwaiter().GetResult();
-                Console.WriteLine(result); 
-                return 0;
+                // Error out if connection string not set
+                // Connection strings CAN OPTIONALLY inlcude a hub name, so letting that go
+                // even if a name is not provided.
+                if (ehConnString.Value()!=null)
+                {
+                    // Default Timeout if not set
+                    long iTimeOut = 5; //default to 5 seconds if not specified
+                    if (timeOut.Value()!=null)
+                        iTimeOut = long.Parse(timeOut.Value()); 
+                    
+                    // Force to 5 if set to lower than the min of 5
+                    if (iTimeOut < 5)
+                        iTimeOut = 5;
+
+                    string result = processAllEvents(ehConnString.Value(), ehName.Value(), iTimeOut).GetAwaiter().GetResult();
+                    //Console.WriteLine(result); 
+                    return 0;
+                }
+                else
+                {
+                    Console.WriteLine("Must provide a connection string at a minimum.");
+                    cmd.ShowHelp();
+                    return 1;
+                }
+                
             });
 
             cmd.HelpOption("-? | -h | --help");
@@ -37,7 +59,7 @@ namespace QueryEventHub
 
         }
 
-        private static async Task<string> processAllEvents(string ehConnectionString, string ehName)
+        private static async Task<string> processAllEvents(string ehConnectionString, string ehName, long iTimeOut)
         {
             var consumerGroup = EventHubConsumerClient.DefaultConsumerGroupName;
 
@@ -50,7 +72,7 @@ namespace QueryEventHub
             {
                 using CancellationTokenSource cancellationSource = new CancellationTokenSource();
                 //Cancel after 5 seconds or 100 events (whichever comes first)
-                cancellationSource.CancelAfter(TimeSpan.FromSeconds(5));
+                cancellationSource.CancelAfter(TimeSpan.FromSeconds(iTimeOut));
                 int eventsRead = 0;
                 int maximumEvents = 100;
 
